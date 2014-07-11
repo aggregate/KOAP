@@ -1,0 +1,125 @@
+// Example.koap
+// my primary test case
+$define SIMDS 4 
+$define MAXBLOCK 8 
+// 4*16 = 64 threads
+
+const int NPROC = SIMDS * MAXBLOCK;
+const int NBPROC = MAXBLOCK;
+
+
+#include <time.h>
+
+$global // declare the environment
+// all OpenCL environment variables will be declared here
+
+${
+
+// contains code for the VecAdd kernel
+$include "VecAdd.cl" 
+
+__constant int NPROC = SIMDS * MAXBLOCK;
+__constant int NBPROC = MAXBLOCK;
+
+
+__kernel void VecMul(__global float *a, __global float *b, __global float *out){
+	int iproc = get_global_id(0);
+	out[iproc] = a[iproc] * b[iproc];
+}
+
+__kernel void VecSqr(__global float *a, __global float *out)
+{
+	int iproc = get_global_id(0);
+	out[iproc] = a[iproc] * a[iproc];
+}
+
+$}
+
+// square each element of a vector, in paralell
+void expVec(float *op, float *res)
+{
+	// allocate memory buffers for the arguments
+	$clalloc(op, cl_float, NPROC, ro)
+	$clalloc(res, cl_float, NPROC, wo)
+
+	// write the input vector to the device
+	$clwrite(op)
+	// run the kernel on the input
+	// Global work size = NPROC
+	// Local work size = NBPROC
+	$call VecSqr(op, res, NPROC, NBPROC);
+	// read the result from the device
+	$clread(res)
+	// free the memory buffers
+	$clfree(op, res)
+}
+
+int main(int argc, char **argv)
+{
+	float a[NPROC];
+	float b[NPROC];
+	float out[NPROC];
+
+	// initialize the data to something
+	int i;
+	for (i = 0; i < NPROC; ++i)
+	{a[i] = i; b[i] = i; out[i] = 0;}	
+
+	/* print initialized values */
+	for (i = 0; i < NPROC; ++i)
+	{printf("%2.2f + %2.2f = %2.2f\n", a[i], b[i], out[i]);}
+
+	$init
+	// initialize the environment
+
+	// allocate memory buffers on the device
+	$clalloc(a, cl_float, NPROC, ro)
+	$clalloc(b, cl_float, NPROC, ro)
+	$clalloc(out, cl_float, NPROC, wo)
+
+	// write the arguments to the device
+	$clwrite(a, b)
+	struct timespec getCallStart;
+	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &getCallStart);
+
+	// run VecAdd, set args to a, b, out
+	$call VecAdd(a, b, out, NPROC, NBPROC)
+	// change some host data
+	a[0] = out[0];
+
+	// write a to device again
+	$clwrite(a) 
+
+	// call VecMull, set args to a, b, out
+	$call VecMul(a, b, out, NPROC, NBPROC) 
+
+	// wait for the kernels to finish
+	clFinish(cmdQ);
+
+	struct timespec getCallFinish;
+	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &getCallFinish);
+
+	// read out from it's cl_mem
+	$clread(out)
+
+
+	// square the elements of out
+	expVec(out, out);
+
+
+	// print the results
+	for (i = 0; i < NPROC; ++i)
+	{printf("%lf\n", out[i]);}
+
+	// deallocate cl_mems for these vars
+	$clfree(a, b, out)
+
+	double callTime = ((getCallFinish.tv_sec - getCallStart.tv_sec)+
+			(getCallFinish.tv_nsec - getCallStart.tv_nsec) / 1000000000.0);
+
+	printf("Call Time: %2.9lf\n", callTime);
+
+	// free the environment
+	$clcleanup 
+	return 0;
+}

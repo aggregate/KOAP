@@ -1,0 +1,42 @@
+#!/usr/bin/perl
+use strict;
+if (@ARGV != 2)
+{
+	print "Usage: barsyncrun [OpenCL kernel file name] [number of runs]\n";
+	die;
+}
+
+my $filename = $ARGV[0];
+my $runs = $ARGV[1];
+
+#my @output = `./runcl $filename`;
+my @output = `./runc $filename`;
+for (my $i = 0; $i < @output; $i++)
+{print $output[$i];}
+
+my @splitname = split(/\./, $filename);
+my $prefix;
+
+# setting the prefix for the output files to be the same as the
+# name of the kernel file, sans the file extension
+for (my $i = 0; $i < @splitname - 1; ++$i)
+{$prefix = $prefix.$splitname[$i].".";}
+$/ = '.';
+chomp($prefix);
+$/ = '\n';
+
+my @times;
+my $total = 0;
+my @splitout;
+for (my $i = 0; $i < $runs; ++$i)
+{
+	$output[0] = `./$prefix | grep Time`;
+	@splitout = split(/ /, $output[0]);
+	$times[$i] = $splitout[@splitout-1];
+	chomp($times[$i]);
+	$total += $times[$i];
+	print $times[$i];
+}
+
+my $avg = $total/$runs;
+print "\nAverage Kernel Time: $avg\n";

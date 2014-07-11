@@ -1,0 +1,203 @@
+Frank Roberts - jfrobe2@engr.uky.edu
+
+KOAP - The Kentucky OpenCL Application Preprocessor
+	KOAP is a tool for developing OpenCL applications. It's purpose is to
+allow the programmer to aggregate and simplify calls to the OpenCL API.
+KOAP accepts as input a file containing (or including) both the OpenCL
+program and the host C program. KOAP understands several directives, each
+of which is prefixed with a '$' character. When KOAP is run, these 
+directives are replaced with the requisite OpenCL API calls.
+
+
+Build instructions:
+Type make. That's it. The resulting binary is called "koap", and is
+completely self contained. Stick it in your path and go.
+
+
+KOAP's command line usage is as follows:
+
+Usage: ./koap <options> [koap file names ...]
+
+Options:
+	-d, --device <device>
+		device options:
+		CPU -> CL_DEVICE_TYPE_CPU
+		GPU -> CL_DEVICE_TYPE_GPU
+		ACC -> CL_DEVICE_TYPE_ACCELERATOR
+		koap defaults to CL_DEVICE_TYPE_DEFAULT
+
+	-b, --build "cmd"
+		run cmd after generating output files
+
+	-u, --constFile <file>
+		update internal constants used for code generation from file
+
+	-f, --clcflags "flags"
+		Use flags for OpenCL program compilation
+
+
+KOAP directives include:
+
+$include "filename_or_path"
+	Works similarly to the C preprocessor's #include. The path may be 
+	absolute, or relative to the current directory. KOAP will not detect
+	circular includes, so be careful. A circular include will cause KOAP
+	to loop infinitely. The file specified is read and processed
+	(comments striped and other $includes handled) and inserted into the
+	program source.
+
+$define name value 
+	Works similarly to the C preprocessors #define, but is not as smart or
+	flexible. A $define will produce in the output a #define in both the
+	host program source and the OpenCL program source. $defines are inserted
+	at the top of the OpenCL source.
+
+$global
+	This directive gets replaced by the declarations of all the variables
+	necessary to set up an OpenCL environment. The variables declared
+	by this directive are accessible to all code within the file it appears
+	in. The $global directive MUST be global in scope, as it defines
+	an error checking function used throughout the host program.
+
+$init
+	This directive initializes the state declared by the $global directive.
+	This directive need appear only once in a program, even if kernels
+	are being run from several functions. The $init directive must appear
+	in the program flow before any other directives ($define, $include, and
+	$global being excepted). The $init directive may appear more than once,
+	but should not be used a second time without first using the $clcleanup
+	directive.
+
+$clalloc (host_name, OpenCL_type, buf_numElements, perms)
+	This directive is used to allocate memory on the OpenCL device for a
+	host buffer. An OpenCL memory buffer must be created for each data
+	structure that will be used on the OpenCL device. Allocations done
+	with $clalloc have local scope.
+
+	host_name: the name (identifier) of the host data structure
+
+	OpenCL_type: the type to be used when allocating the OpenCL buffer 
+
+	buf_numElements: the number of elements in the data structure.
+		The size of the buffer to be allocated is calculated as
+			(sizeof(OpenCL_type)*buf_numElements)
+
+	perms: The permissions to be used for the OpenCL buffer. Options are:
+		rw - CL_MEM_READ_WRITE
+		ro - CL_MEM_READ_ONLY
+		wo - CL_MEM_WRITE_ONLY	
+
+		Keep in mind that these are the permissions as seen from the OpenCL
+		device.
+
+	$clalloc does NOT write the data from the host buffer to the device.
+
+	Example:
+		$clalloc(buf, cl_float, NPROC, ro)
+		Allocates an OpenCL memory object of size sizeof(cl_float)*NPROC
+		with read only permissions. The memory object is accessible 
+		via the cl_mem with the identifier cl_buf.
+
+$clwrite (host_prt_list)
+	The directive writes the data from one or more host buffers to
+	previously allocated OpenCL memory objects. Values passed to this
+	directive should look like pointers (names of arrays, pointers, or 
+	use of the & operator should suffice). This directive should be used
+	every time the programmer wishes to update the buffer on the OpenCL
+	device.
+
+	Example:
+		$clwrite(buf, a, &b)
+		Writes the contents of the host buffers pointed to by buf, a, and &b
+		to their respective previously allocated (via $clalloc) device
+		memory buffers.
+
+$clread (host_ptr_list)
+	The counterpart of the $clwrite directive. This directive reads data
+	back to the host from the OpenCL device. Again, values passed to
+	this directive should look like pointers. This directive should be
+	used any time the programmer wants to get data back from the device,
+	e.g., after a kernel has completed.
+
+	Example:
+		$clread(buf, a, &b)
+		Reads the contents of the OpenCL memory buffers associated with
+		buf, a, and b back to the host buffers pointed to by buf, a, and &b.
+
+$call kernel_name(arg_list, Global_size, Local_size)
+	This directive generates code to launch the specified kernel. The 
+	arguments are set from the argument list, then the kernel is launched.
+	The kernel launch is asynchronous. A call to clFinish(command_queue)
+	may be used if the programmer wishes the host program to block while
+	the kernel executes. The $clread directive will block when it hits the
+	read. The Global and Local work sizes are specified as the last two 
+	arguments to the directive. These should NOT look like pointers.
+
+	Example:
+		$call VecAdd(a, b, out, NPROC, blockSize)
+		Sets the arguments to VecAdd to be a, b, and out, in that order, and
+		then launches the kernel with the name VecAdd with global work size
+		NPROC and local work size blockSize.
+
+$clfree (host_name_list)
+	Frees the OpenCL memory objects allocated for these names by $clalloc.
+	This directive should be called on each allocated memory object before
+	the memory object goes out of scope.
+
+	Example:
+		$clfree(a, b, buf, out)
+		Deallocates the OpenCL memory buffers associated with a, b, buf, and
+		out.
+
+$clcleanup
+	Releases the resources allocated and initialized by the $init directive.
+
+
+The OpenCL program:
+
+The OpenCL code should appear within the ${ and $} symbols. More than one
+of these blocks may appear, and these blocks are simply concatenated 
+together in the order they appear. The only KOAP directive that may appear
+within a ${ $} block is the $include directive. All code appearing
+within a ${ $} block should be valid OpenCL code. The OpenCL program will
+be separated from the host source and escaped to a C-style string. This
+C-Style string is then written to a header file, which is automatically
+included in the generated code.
+
+The files generated for an input file called App.koap are App.c and App.h.
+Although KOAP does not check the file extension of its input file, it
+is recommended that all files containing KOAP directives use the extension
+.koap.
+
+KOAP internal code generation identifiers:
+Many of the identifiers used in the generated code may be changed. To
+specify a different identifier for a particular object, the programmer
+must list the object and the new name in a file. The format is:
+
+KOAP_CONSTANT newName
+
+Example:
+
+KOAP_PLATID platformID
+KOAP_CMDQ	MyCommandQueue
+
+If a constants file containing this text is used, then the generated code
+will call its command queue MyCommandQueue and the platform ID platformID.
+
+The --constFile flag tells KOAP where to look for constant redefinitions.
+
+KOAP constants and their default values include:
+
+KOAP_PLATID		platid
+KOAP_CLDEV		cldev
+KOAP_CONTEXT	context
+KOAP_CMDQ		cmdQ
+KOAP_PROG		clprogram
+KOAP_ERR		errCode
+KOAP_NUM_PLATS	numPlats
+KOAP_CLSRC		cl_src
+KOAP_KSTR		clString
+KOAP_KSZ		ksize
+KOAP_PLATNAME	platName
+KOAP_GLBSZ		glb_sz
+KOAP_LCLSZ		lcl_sz

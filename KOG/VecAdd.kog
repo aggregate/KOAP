@@ -1,0 +1,67 @@
+$define SIMDS 4 
+$define MAXBLOCK 8 
+// 4*16 = 64 threads
+
+$define NPROC GLOBAL_WORK_SIZE
+
+$kernel VecAdd
+$ro float NPROC
+$ro float NPROC
+$wo float NPROC
+
+$kernel VecMul
+$ro float NPROC
+$ro float NPROC
+$wo float NPROC
+
+#include <time.h>
+
+${
+
+$include "VecAdd.cl" 
+
+__kernel void VecMul(__global float *a, __global float *b, __global float *out){
+	int iproc = get_global_id(0);
+	out[iproc] = a[iproc] * b[iproc];
+}
+
+$}
+
+int main(int argc, char **argv)
+{
+	float a[NPROC];
+	float b[NPROC];
+	float out[NPROC];
+
+	int i;
+	for (i = 0; i < NPROC; ++i)
+	{a[i] = i; b[i] = i; out[i] = 0;}	
+
+	/* print initialized values */
+	for (i = 0; i < NPROC; ++i)
+	{printf("%2.2f + %2.2f = %2.2f\n", a[i], b[i], out[i]);}
+
+	$once
+
+	$init
+
+	struct timespec getCallStart;
+	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &getCallStart);
+
+	$call VecAdd(a, b, out)
+	$call VecMul(a, b, out)
+
+	struct timespec getCallFinish;
+	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &getCallFinish);
+
+	double callTime = ((getCallFinish.tv_sec - getCallStart.tv_sec)+
+			(getCallFinish.tv_nsec - getCallStart.tv_nsec) / 1000000000.0);
+
+	for (i = 0; i < NPROC; ++i)
+	{printf("%2.2f * %2.2f = %2.2f\n", a[i], b[i], out[i]);}
+
+	printf("Call Time: %2.9lf\n", callTime);
+	$clcleanup
+
+	return 0;
+}

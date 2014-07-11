@@ -1,0 +1,34 @@
+#!/usr/bin/perl
+
+use strict;
+
+if (@ARGV != 1)
+{
+	print "Usage: runcl [OpenCL kernel file name]\n";
+	die;
+}
+my $filename = $ARGV[0];
+
+my @output = `./koab $filename`;
+for (my $i = 0; $i < @output; $i++)
+{print $output[$i];}
+
+my @splitname = split(/\./, $filename);
+my $prefix;
+
+# setting the prefix for the output files to be the same as the 
+# name of the kernel file, sans the file extension
+for (my $i = 0; $i < @splitname - 1; ++$i)
+{$prefix = $prefix.$splitname[$i].".";}
+$/ = '.';
+chomp($prefix);
+$/ = '\n';
+  
+@output = `gcc $prefix".c" -lOpenCL -lrt -o $prefix`;
+for (my $i = 0; $i < @output; $i++)
+{print $output[$i];}
+
+if (@output == 0)
+{@output = `./$prefix`;} 
+for (my $i = 0; $i < @output; $i++)
+{print $output[$i];}

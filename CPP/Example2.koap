@@ -1,0 +1,60 @@
+#include <stdio.h>
+#include <stdlib.h>
+
+$global
+
+${
+__kernel void thing(__global int *in, __global int *out)
+{
+	int iproc = get_global_id(0);
+	out[iproc] = in[iproc] + in[(iproc + 1) % get_global_size(0)];
+}
+$}
+
+int main(int argc, char **argv)
+{
+	if (argc != 3)
+	{
+		fprintf(stderr, "Usage: %s <blocksize> <blocks>\n", argv[0]);
+		exit(1);
+	}
+	int blocksize = atoi(argv[1]);
+	int blocks = atoi(argv[2]);
+	int nproc = blocks * blocksize;
+
+	int *in = (int *)malloc(sizeof(int)*nproc);
+	int *out = (int *)malloc(sizeof(int)*nproc);
+
+	int i;
+	for (i = 0; i < nproc; i++)
+	{
+		in[i] = i;
+		out[i] = 0;
+		printf("%d + %d = %d\n", in[i], in[(i+1) % nproc], out[i]);
+	}
+
+	$init
+
+
+	$clalloc(in, cl_int, nproc, ro)
+	$clalloc(out, cl_int, nproc, wo)
+
+	$clwrite(in)
+
+	$call thing(in, out, nproc, blocksize)
+
+	$clread(out)
+
+	for (i = 0; i < nproc; i++)
+	{
+		printf("%d + %d = %d\n", in[i], in[(i + 1) % nproc], out[i]);
+	}
+
+	$clfree(in, out)
+
+	free(in);
+	free(out);
+
+	$clcleanup
+	return 0;
+}

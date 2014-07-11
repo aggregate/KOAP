@@ -1,0 +1,9 @@
+Not comments
+/* comment comment // comment comment *  comment
+commment comment
+*/ not comment
+/**/not comment // comment
+// /* */ comment
+/* comment
+// */
+should see this
